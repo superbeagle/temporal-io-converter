@@ -7,10 +7,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import io.camunda.zeebe.model.bpmn.Bpmn;
 import io.camunda.zeebe.model.bpmn.BpmnModelInstance;
+import io.camunda.zeebe.model.bpmn.impl.instance.ConditionExpressionImpl;
 import io.camunda.zeebe.model.bpmn.instance.*;
 import io.camunda.zeebe.model.bpmn.instance.Process;
 import io.camunda.zeebe.model.bpmn.instance.bpmndi.BpmnDiagram;
 import io.camunda.zeebe.model.bpmn.instance.bpmndi.BpmnPlane;
+import org.camunda.bpm.model.xml.impl.instance.ModelTypeInstanceContext;
 
 import static io.camunda.zeebe.model.bpmn.impl.BpmnModelConstants.BPMN20_NS;
 
@@ -152,7 +154,8 @@ public class BPMNGenFromJSON {
 
                     while(dataIter.hasNext()){
                         JsonNode dataCond = (JsonNode) dataIter.next();
-                        sft = new SequenceFromTo(node.findValue("name").asText(), dataCond.findValue("transition").asText());
+                        sft = new SequenceFromTo(node.findValue("name").asText(), dataCond.findValue("transition").asText(), dataCond.findValue("condition").asText());
+
                         sequences.put(index, sft);
                         index++;
                     }
@@ -271,6 +274,12 @@ public class BPMNGenFromJSON {
 
             sf.setSource(sourceFlowNode);
             sf.setTarget(targetFlowNode);
+
+            if(sft.GetConditionExpression() != null) {
+                ConditionExpression conditionExpression = modelInstance.newInstance(ConditionExpression.class);
+                conditionExpression.setTextContent(sft.GetConditionExpression());
+                sf.setConditionExpression(conditionExpression);
+            }
 
             plane = DrawFlow.drawFlow(plane, modelInstance, sf, fromFNI, toFNI, null, 0d, 0d);
 
