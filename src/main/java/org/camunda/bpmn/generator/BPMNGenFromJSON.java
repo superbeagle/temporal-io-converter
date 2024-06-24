@@ -174,6 +174,9 @@ public class BPMNGenFromJSON {
 
         Iterator iter = stateList.iterator();
 
+        // Dave - this is a hack to space the service tasks after an exclusive gateway vertically.
+        //   a better way to do this would be to traverse the json tree depth first
+        int operationsCount = 0;
         while (iter.hasNext()) {
             JsonNode node = (JsonNode) iter.next();
             switch ((node.findValue("type")).asText()) {
@@ -237,6 +240,13 @@ public class BPMNGenFromJSON {
                 case ("operation"):
                     bpmnElement = (JSONToBPMNElement) JSONElementsMap.get("service");
                     x = x + 150;
+
+                    // Dave - hack to space the operations after an exclusive gateway vertically
+                    if(operationsCount > 0){
+                        y = y + 100;
+                    }
+                    operationsCount++;
+
                     element = (BpmnModelElementInstance) modelInstance.newInstance(bpmnElement.getType());
                     element.setAttributeValue("name", node.findValue("name").asText());
                     process.addChildElement(element);
@@ -253,6 +263,9 @@ public class BPMNGenFromJSON {
                         plane = DrawShape.drawShape(plane, modelInstance, element, x, y, bpmnElement.getHeight(), bpmnElement.getWidth(), true, false);
                         fni = new FlowNodeInfo(element.getAttributeValue("id"), x, y, x, y, bpmnElement.getType().toString(), bpmnElement.getHeight(), bpmnElement.getWidth());
                         flowNodesMap.put("end-"+node.findValue("name").asText(), fni);
+
+                        // Dave - hack to space the operations after an exclusive gateway vertically
+                        x = x - 300;
                     }
 
                     break;
