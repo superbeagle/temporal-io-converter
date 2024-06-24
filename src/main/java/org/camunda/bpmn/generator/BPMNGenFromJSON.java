@@ -1,18 +1,16 @@
 package org.camunda.bpmn.generator;
 
-import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import io.camunda.zeebe.model.bpmn.Bpmn;
 import io.camunda.zeebe.model.bpmn.BpmnModelInstance;
-import io.camunda.zeebe.model.bpmn.impl.instance.ConditionExpressionImpl;
 import io.camunda.zeebe.model.bpmn.instance.*;
 import io.camunda.zeebe.model.bpmn.instance.Process;
 import io.camunda.zeebe.model.bpmn.instance.bpmndi.BpmnDiagram;
 import io.camunda.zeebe.model.bpmn.instance.bpmndi.BpmnPlane;
-import org.camunda.bpm.model.xml.impl.instance.ModelTypeInstanceContext;
+import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskDefinition;
 
 import static io.camunda.zeebe.model.bpmn.impl.BpmnModelConstants.BPMN20_NS;
 
@@ -186,6 +184,18 @@ public class BPMNGenFromJSON {
                         bpmnElement = (JSONToBPMNElement) JSONElementsMap.get("parallel");
                         x = x + 100;
                         element = (BpmnModelElementInstance) modelInstance.newInstance(bpmnElement.getType());
+
+                        // Create and set the zeebe:taskDefinition extension element
+                        JsonNode functionRefNode = node.findValue("functionRef");
+                        if(functionRefNode != null) {
+                            ExtensionElements extensionElements = modelInstance.newInstance(ExtensionElements.class);
+                            ZeebeTaskDefinition taskDefinition = modelInstance.newInstance(ZeebeTaskDefinition.class);
+                            taskDefinition.setType(node.findValue("functionRef").asText());
+                            taskDefinition.setRetries("3"); // Example of setting retries
+                            extensionElements.addChildElement(taskDefinition);
+                            element.addChildElement(extensionElements);
+                        }
+
                         process.addChildElement(element);
                         plane = DrawShape.drawShape(plane, modelInstance, element, x, y, bpmnElement.getHeight(), bpmnElement.getWidth(), true, false);
                         fni = new FlowNodeInfo(element.getAttributeValue("id"), x, y, x, y, bpmnElement.getType().toString(), bpmnElement.getHeight(), bpmnElement.getWidth());
@@ -204,11 +214,23 @@ public class BPMNGenFromJSON {
                             bpmnElement = (JSONToBPMNElement) JSONElementsMap.get("service");
                             element = (BpmnModelElementInstance) modelInstance.newInstance(bpmnElement.getType());
                             element.setAttributeValue("name", action.findValue("name").asText());
+
+                            // Create and set the zeebe:taskDefinition extension element
+                            functionRefNode = action.findValue("functionRef");
+                            if(functionRefNode != null) {
+                                ExtensionElements extensionElements = modelInstance.newInstance(ExtensionElements.class);
+                                ZeebeTaskDefinition taskDefinition = modelInstance.newInstance(ZeebeTaskDefinition.class);
+                                taskDefinition.setType(action.findValue("functionRef").asText());
+                                taskDefinition.setRetries("3"); // Example of setting retries
+                                extensionElements.addChildElement(taskDefinition);
+                                element.addChildElement(extensionElements);
+                            }
+
                             process.addChildElement(element);
                             plane = DrawShape.drawShape(plane, modelInstance, element, x, y, bpmnElement.getHeight(), bpmnElement.getWidth(), true, false);
-
                             fni = new FlowNodeInfo(element.getAttributeValue("id"), x, y, x, y, bpmnElement.getType().toString(), bpmnElement.getHeight(), bpmnElement.getWidth());
                             flowNodesMap.put(action.findValue("name").asText(), fni);
+
                             parallelNodes.put(fni.getNewId(), fni);
                             y = y + 100;
                             i = i + 1;
