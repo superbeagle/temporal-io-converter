@@ -1,6 +1,5 @@
 package org.camunda.bpmn.generator;
 
-import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -11,6 +10,7 @@ import io.camunda.zeebe.model.bpmn.instance.*;
 import io.camunda.zeebe.model.bpmn.instance.Process;
 import io.camunda.zeebe.model.bpmn.instance.bpmndi.BpmnDiagram;
 import io.camunda.zeebe.model.bpmn.instance.bpmndi.BpmnPlane;
+import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskDefinition;
 
 import static io.camunda.zeebe.model.bpmn.impl.BpmnModelConstants.BPMN20_NS;
 
@@ -152,7 +152,8 @@ public class BPMNGenFromJSON {
 
                     while(dataIter.hasNext()){
                         JsonNode dataCond = (JsonNode) dataIter.next();
-                        sft = new SequenceFromTo(node.findValue("name").asText(), dataCond.findValue("transition").asText());
+                        sft = new SequenceFromTo(node.findValue("name").asText(), dataCond.findValue("transition").asText(), dataCond.findValue("condition").asText());
+
                         sequences.put(index, sft);
                         index++;
                     }
@@ -171,6 +172,9 @@ public class BPMNGenFromJSON {
 
         Iterator iter = stateList.iterator();
 
+        // Dave - this is a hack to space the service tasks after an exclusive gateway vertically.
+        //   a better way to do this would be to traverse the json tree depth first
+        int operationsCount = 0;
         while (iter.hasNext()) {
             JsonNode node = (JsonNode) iter.next();
             switch ((node.findValue("type")).asText()) {
@@ -180,6 +184,18 @@ public class BPMNGenFromJSON {
                         bpmnElement = (JSONToBPMNElement) JSONElementsMap.get("parallel");
                         x = x + 100;
                         element = (BpmnModelElementInstance) modelInstance.newInstance(bpmnElement.getType());
+
+                        // Create and set the zeebe:taskDefinition extension element
+                        JsonNode functionRefNode = node.findValue("functionRef");
+                        if(functionRefNode != null) {
+                            ExtensionElements extensionElements = modelInstance.newInstance(ExtensionElements.class);
+                            ZeebeTaskDefinition taskDefinition = modelInstance.newInstance(ZeebeTaskDefinition.class);
+                            taskDefinition.setType(node.findValue("functionRef").asText());
+                            taskDefinition.setRetries("3"); // Example of setting retries
+                            extensionElements.addChildElement(taskDefinition);
+                            element.addChildElement(extensionElements);
+                        }
+
                         process.addChildElement(element);
                         plane = DrawShape.drawShape(plane, modelInstance, element, x, y, bpmnElement.getHeight(), bpmnElement.getWidth(), true, false);
                         fni = new FlowNodeInfo(element.getAttributeValue("id"), x, y, x, y, bpmnElement.getType().toString(), bpmnElement.getHeight(), bpmnElement.getWidth());
@@ -189,19 +205,38 @@ public class BPMNGenFromJSON {
                         JsonNode actions = node.findValue("actions");
                         Iterator actionIter = actions.iterator();
                         HashMap<String, FlowNodeInfo> parallelNodes = new HashMap<>();
+                        int i = 0;
                         while (actionIter.hasNext()) {
-                            x = x + 150;
+                            if(i == 0) {
+                                x = x + 150;
+                            }
                             JsonNode action = (JsonNode) actionIter.next();
                             bpmnElement = (JSONToBPMNElement) JSONElementsMap.get("service");
                             element = (BpmnModelElementInstance) modelInstance.newInstance(bpmnElement.getType());
                             element.setAttributeValue("name", action.findValue("name").asText());
+
+                            // Create and set the zeebe:taskDefinition extension element
+                            functionRefNode = action.findValue("functionRef");
+                            if(functionRefNode != null) {
+                                ExtensionElements extensionElements = modelInstance.newInstance(ExtensionElements.class);
+                                ZeebeTaskDefinition taskDefinition = modelInstance.newInstance(ZeebeTaskDefinition.class);
+                                taskDefinition.setType(action.findValue("functionRef").asText());
+                                taskDefinition.setRetries("3"); // Example of setting retries
+                                extensionElements.addChildElement(taskDefinition);
+                                element.addChildElement(extensionElements);
+                            }
+
                             process.addChildElement(element);
                             plane = DrawShape.drawShape(plane, modelInstance, element, x, y, bpmnElement.getHeight(), bpmnElement.getWidth(), true, false);
-
                             fni = new FlowNodeInfo(element.getAttributeValue("id"), x, y, x, y, bpmnElement.getType().toString(), bpmnElement.getHeight(), bpmnElement.getWidth());
                             flowNodesMap.put(action.findValue("name").asText(), fni);
+
                             parallelNodes.put(fni.getNewId(), fni);
+                            y = y + 100;
+                            i = i + 1;
                         }
+
+                        y = y - (100 * i);
 
                         bpmnElement = (JSONToBPMNElement) JSONElementsMap.get("parallel");
                         x = x + 150;
@@ -227,6 +262,13 @@ public class BPMNGenFromJSON {
                 case ("operation"):
                     bpmnElement = (JSONToBPMNElement) JSONElementsMap.get("service");
                     x = x + 150;
+
+                    // Dave - hack to space the operations after an exclusive gateway vertically
+                    if(operationsCount > 0){
+                        y = y + 100;
+                    }
+                    operationsCount++;
+
                     element = (BpmnModelElementInstance) modelInstance.newInstance(bpmnElement.getType());
                     element.setAttributeValue("name", node.findValue("name").asText());
                     process.addChildElement(element);
@@ -243,6 +285,9 @@ public class BPMNGenFromJSON {
                         plane = DrawShape.drawShape(plane, modelInstance, element, x, y, bpmnElement.getHeight(), bpmnElement.getWidth(), true, false);
                         fni = new FlowNodeInfo(element.getAttributeValue("id"), x, y, x, y, bpmnElement.getType().toString(), bpmnElement.getHeight(), bpmnElement.getWidth());
                         flowNodesMap.put("end-"+node.findValue("name").asText(), fni);
+
+                        // Dave - hack to space the operations after an exclusive gateway vertically
+                        x = x - 300;
                     }
 
                     break;
@@ -271,6 +316,12 @@ public class BPMNGenFromJSON {
 
             sf.setSource(sourceFlowNode);
             sf.setTarget(targetFlowNode);
+
+            if(sft.GetConditionExpression() != null) {
+                ConditionExpression conditionExpression = modelInstance.newInstance(ConditionExpression.class);
+                conditionExpression.setTextContent(sft.GetConditionExpression());
+                sf.setConditionExpression(conditionExpression);
+            }
 
             plane = DrawFlow.drawFlow(plane, modelInstance, sf, fromFNI, toFNI, null, 0d, 0d);
 
