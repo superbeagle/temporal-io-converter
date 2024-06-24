@@ -192,8 +192,11 @@ public class BPMNGenFromJSON {
                         JsonNode actions = node.findValue("actions");
                         Iterator actionIter = actions.iterator();
                         HashMap<String, FlowNodeInfo> parallelNodes = new HashMap<>();
+                        int i = 0;
                         while (actionIter.hasNext()) {
-                            x = x + 150;
+                            if(i == 0) {
+                                x = x + 150;
+                            }
                             JsonNode action = (JsonNode) actionIter.next();
                             bpmnElement = (JSONToBPMNElement) JSONElementsMap.get("service");
                             element = (BpmnModelElementInstance) modelInstance.newInstance(bpmnElement.getType());
@@ -204,7 +207,11 @@ public class BPMNGenFromJSON {
                             fni = new FlowNodeInfo(element.getAttributeValue("id"), x, y, x, y, bpmnElement.getType().toString(), bpmnElement.getHeight(), bpmnElement.getWidth());
                             flowNodesMap.put(action.findValue("name").asText(), fni);
                             parallelNodes.put(fni.getNewId(), fni);
+                            y = y + 100;
+                            i = i + 1;
                         }
+
+                        y = y - (100 * i);
 
                         bpmnElement = (JSONToBPMNElement) JSONElementsMap.get("parallel");
                         x = x + 150;
