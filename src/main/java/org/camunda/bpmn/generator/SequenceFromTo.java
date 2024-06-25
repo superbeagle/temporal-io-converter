@@ -38,6 +38,7 @@ public class SequenceFromTo {
             String dotRegex = "^\\.+";
             String result = matcher.group(1);
             result = result.replaceFirst(dotRegex, "");
+            result = "=" + result;
             return result;
         } else {
             return conditionExpression;
