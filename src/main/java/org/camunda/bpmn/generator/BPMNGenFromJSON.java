@@ -15,12 +15,23 @@ import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskDefinition;
 import static io.camunda.zeebe.model.bpmn.impl.BpmnModelConstants.BPMN20_NS;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 
 public class BPMNGenFromJSON {
+
+    private BpmnModelInstance modelInstance;
+    private String processId;
+    private String bpmnString;
+
+    public BPMNGenFromJSON() {
+        this.modelInstance = Bpmn.createEmptyModel();
+    }
+
     public static void main(String[] args) throws Exception {
         //try {
 
@@ -31,8 +42,37 @@ public class BPMNGenFromJSON {
             return;
         }
 
-        // Read in JSON file
-        File file = new File(args[0]);
+        BPMNGenFromJSON bpmnGenFromJSON = new BPMNGenFromJSON();
+        String jsonString = bpmnGenFromJSON.fileToString(args[0]);
+        bpmnGenFromJSON.convert(jsonString);
+
+        File outputFile = new File(args[1]);
+        Bpmn.writeModelToFile(outputFile, bpmnGenFromJSON.modelInstance);
+
+        System.out.println("File has been successfully converted and can be found at "+args[1]);
+    }
+
+    public String fileToString(String filePath) throws IOException {
+        // Read file content into a byte array
+        byte[] fileBytes = Files.readAllBytes(Paths.get(filePath));
+
+        // Convert byte array to String
+        String fileContent = new String(fileBytes);
+
+        return fileContent;
+    }
+
+    public void convertToBpmnString(String jsonString) throws IOException {
+        convert(jsonString);
+        bpmnString = Bpmn.convertToString(modelInstance);
+    }
+
+    public void convert(String jsonString) throws IOException {
+
+        ObjectMapper objectMapper = new ObjectMapper();
+        //JsonNode json = objectMapper.readTree(file);
+
+        JsonNode json = objectMapper.readTree(jsonString);
 
         // Create hash map to map ids in old file node objects with ids in new file
         HashMap<String, Object> idMap = new HashMap<>();
@@ -60,11 +100,7 @@ public class BPMNGenFromJSON {
         //bpmnElement = new JSONToBPMNElement(SequenceFlow.class, 0d,0d);
         //JSONElementsMap.put("Data-MO-Connector-Transition", bpmnElement);
 
-        ObjectMapper objectMapper = new ObjectMapper();
-        JsonNode json = objectMapper.readTree(file);
-
         // Create BPMN model using Camunda Model APIs
-        BpmnModelInstance modelInstance = Bpmn.createEmptyModel();
 
         Definitions definitions = modelInstance.newInstance(Definitions.class);
         definitions.setTargetNamespace(BPMN20_NS);
@@ -74,8 +110,9 @@ public class BPMNGenFromJSON {
         Process process = modelInstance.newInstance(Process.class);
         process.setExecutable(true); // Want to make sure it is executable by default in Modeler
         process.setName((json.findValue("name")).asText());
+        this.processId = (json.findValue("id")).asText();
+        process.setId(processId);
         definitions.addChildElement(process);
-
 
         // For the diagram, a diagram and a plane element needs to be created. The plane is set in a diagram object and the diagram is added as a child element
         BpmnDiagram bpmnDiagram = modelInstance.newInstance(BpmnDiagram.class);
@@ -185,17 +222,6 @@ public class BPMNGenFromJSON {
                         x = x + 100;
                         element = (BpmnModelElementInstance) modelInstance.newInstance(bpmnElement.getType());
 
-                        // Create and set the zeebe:taskDefinition extension element
-                        JsonNode functionRefNode = node.findValue("functionRef");
-                        if(functionRefNode != null) {
-                            ExtensionElements extensionElements = modelInstance.newInstance(ExtensionElements.class);
-                            ZeebeTaskDefinition taskDefinition = modelInstance.newInstance(ZeebeTaskDefinition.class);
-                            taskDefinition.setType(node.findValue("functionRef").asText());
-                            taskDefinition.setRetries("3"); // Example of setting retries
-                            extensionElements.addChildElement(taskDefinition);
-                            element.addChildElement(extensionElements);
-                        }
-
                         process.addChildElement(element);
                         plane = DrawShape.drawShape(plane, modelInstance, element, x, y, bpmnElement.getHeight(), bpmnElement.getWidth(), true, false);
                         fni = new FlowNodeInfo(element.getAttributeValue("id"), x, y, x, y, bpmnElement.getType().toString(), bpmnElement.getHeight(), bpmnElement.getWidth());
@@ -216,7 +242,7 @@ public class BPMNGenFromJSON {
                             element.setAttributeValue("name", action.findValue("name").asText());
 
                             // Create and set the zeebe:taskDefinition extension element
-                            functionRefNode = action.findValue("functionRef");
+                            JsonNode functionRefNode = action.findValue("functionRef");
                             if(functionRefNode != null) {
                                 ExtensionElements extensionElements = modelInstance.newInstance(ExtensionElements.class);
                                 ZeebeTaskDefinition taskDefinition = modelInstance.newInstance(ZeebeTaskDefinition.class);
@@ -271,6 +297,21 @@ public class BPMNGenFromJSON {
 
                     element = (BpmnModelElementInstance) modelInstance.newInstance(bpmnElement.getType());
                     element.setAttributeValue("name", node.findValue("name").asText());
+
+                    JsonNode actions = node.findValue("actions");
+                    JsonNode action = actions.get(0);
+
+                    // Create and set the zeebe:taskDefinition extension element
+                    JsonNode functionRefNode = action.findValue("functionRef");
+                    if(functionRefNode != null) {
+                        ExtensionElements extensionElements = modelInstance.newInstance(ExtensionElements.class);
+                        ZeebeTaskDefinition taskDefinition = modelInstance.newInstance(ZeebeTaskDefinition.class);
+                        taskDefinition.setType(action.findValue("functionRef").asText());
+                        taskDefinition.setRetries("3"); // Example of setting retries
+                        extensionElements.addChildElement(taskDefinition);
+                        element.addChildElement(extensionElements);
+                    }
+
                     process.addChildElement(element);
                     plane = DrawShape.drawShape(plane, modelInstance, element, x, y, bpmnElement.getHeight(), bpmnElement.getWidth(), true, false);
                     fni = new FlowNodeInfo(element.getAttributeValue("id"), x, y, x, y, bpmnElement.getType().toString(), bpmnElement.getHeight(), bpmnElement.getWidth());
@@ -327,12 +368,14 @@ public class BPMNGenFromJSON {
 
         }
 
-
-        // Write output
         Bpmn.validateModel(modelInstance);
-        File outputFile = new File(args[1]);
-        Bpmn.writeModelToFile(outputFile, modelInstance);
+    }
 
-        System.out.println("File has been successfully converted and can be found at "+args[1]);
+    public String getProcessId() {
+        return processId;
+    }
+
+    public String getBpmnString() {
+        return bpmnString;
     }
 }
